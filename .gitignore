@@ -25,3 +25,7 @@ ENV/
 *.zip
 *.crx
 *.xpi
+
+# Firefox Dev Profile
+.firefox-profile/
+
