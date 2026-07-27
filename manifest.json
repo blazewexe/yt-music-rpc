@@ -1,0 +1,67 @@
+{
+  "manifest_version": 2,
+  "name": "yt-music-rpc",
+  "version": "1.1.0",
+  "description": "YouTube Music → Discord Rich Presence. No desktop app required.",
+  "author": "yt-music-rpc",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "yt-music-rpc@extension",
+      "strict_min_version": "109.0"
+    }
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "webRequest",
+    "webRequestBlocking",
+    "https://discord.com/*",
+    "https://discordapp.com/*",
+    "https://music.youtube.com/*"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://music.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://discord.com/*",
+        "https://discordapp.com/*"
+      ],
+      "js": [
+        "discord-cs.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "browser_action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "yt-music-rpc",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

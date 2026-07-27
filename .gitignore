@@ -1,0 +1,27 @@
+# OS Metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Python Caches & Environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+ENV/
+
+# Extension Packages
+*.zip
+*.crx
+*.xpi

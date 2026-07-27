@@ -1,0 +1,241 @@
+'use strict';
+
+if (typeof browser === 'undefined') { var browser = chrome; }
+
+const $ = (id) => document.getElementById(id);
+
+function showView(name) {
+  $('view-login').classList.toggle('active', name === 'login');
+  $('view-main').classList.toggle('active', name === 'main');
+}
+
+function setLoading(on) {
+  $('loading-overlay').classList.toggle('hidden', !on);
+}
+
+function showError(msg) {
+  const el = $('login-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 8000);
+}
+
+function avatarURL(user) {
+  if (!user) return 'https://cdn.discordapp.com/embed/avatars/0.png';
+  if (!user.avatar) {
+    const idx = user.id ? Number(BigInt(user.id) >> 22n) % 6 : 0;
+    return `https://cdn.discordapp.com/embed/avatars/${idx}.png`;
+  }
+  return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.webp?size=64`;
+}
+
+function fmtTime(secs) {
+  if (!secs || isNaN(secs) || secs <= 0) return '0:00';
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+let pollTimer = null;
+
+function startConnectionPoll() {
+  if (pollTimer) return;
+  let attempts = 0;
+  pollTimer = setInterval(async () => {
+    attempts++;
+    try {
+      const s = await browser.runtime.sendMessage({ type: 'GET_STATE' });
+      if (s.connected || attempts > 40) {
+        stopConnectionPoll();
+        render(s);
+      }
+    } catch {
+      stopConnectionPoll();
+    }
+  }, 500);
+}
+
+function stopConnectionPoll() {
+  clearInterval(pollTimer);
+  pollTimer = null;
+}
+
+let progressTimer = null;
+
+function startProgressTimer(song) {
+  stopProgressTimer();
+  function tick() {
+    const now     = Date.now();
+    const elapsed = Math.max(0, (now - song.startTimestamp) / 1000);
+    const total   = song.endTimestamp
+      ? Math.max(1, (song.endTimestamp - song.startTimestamp) / 1000)
+      : song.duration || 1;
+    const pct = Math.min(100, (elapsed / total) * 100);
+
+    const bar = $('np-bar-inner');
+    const el  = $('np-elapsed');
+    const dur = $('np-duration');
+    if (bar) bar.style.width  = `${pct}%`;
+    if (el)  el.textContent   = fmtTime(elapsed);
+    if (dur) dur.textContent  = fmtTime(total);
+  }
+  tick();
+  progressTimer = setInterval(tick, 1000);
+}
+
+function stopProgressTimer() {
+  clearInterval(progressTimer);
+  progressTimer = null;
+}
+
+function render(state) {
+  const hdr = document.querySelector('.header-status');
+  hdr.classList.toggle('connected', state.connected);
+  $('conn-label').textContent = state.connected
+    ? 'ONLINE'
+    : state.hasToken ? 'CONNECTING…' : 'OFFLINE';
+
+  if (state.loginError) showError(state.loginError);
+
+  if (state.hasToken && !state.connected && !state.user) {
+    showView('login');
+    $('login-btn').style.display     = 'none';
+    $('login-waiting').style.display = 'flex';
+    startConnectionPoll();
+    return;
+  }
+
+  if (!state.hasToken || !state.user) {
+    showView('login');
+    $('login-btn').style.display     = '';
+    $('login-waiting').style.display = 'none';
+    stopConnectionPoll();
+    return;
+  }
+
+  stopConnectionPoll();
+  showView('main');
+  renderUser(state);
+  renderControls(state);
+  renderNowPlaying(state);
+}
+
+function renderUser({ user, status }) {
+  $('user-avatar').src          = avatarURL(user);
+  $('user-name').textContent    = user.global_name || user.username;
+  $('user-tag').textContent     = user.discriminator && user.discriminator !== '0'
+    ? `#${user.discriminator}`
+    : `@${user.username}`;
+  $('avatar-status-dot').className = `avatar-status ${status}`;
+}
+
+function renderControls({ rpcEnabled }) {
+  $('rpc-toggle').checked          = rpcEnabled;
+  $('rpc-state-label').textContent = rpcEnabled ? 'ON' : 'OFF';
+}
+
+function renderNowPlaying({ rpcEnabled, currentSong }) {
+  const song = rpcEnabled ? currentSong : null;
+
+  const npContent  = $('np-content');
+  const npProgress = $('np-progress-wrap');
+  const npIdle     = $('np-idle');
+
+  if (!song) {
+    npContent.style.display  = 'none';
+    npProgress.style.display = 'none';
+    npIdle.style.display     = 'flex';
+    $('preview-song').textContent   = '—';
+    $('preview-artist').textContent = '—';
+    stopProgressTimer();
+    return;
+  }
+
+  npContent.style.display  = 'flex';
+  npProgress.style.display = 'flex';
+  npIdle.style.display     = 'none';
+
+  const artEl = $('np-art');
+  const artPh = $('np-art-placeholder');
+  if (song.albumArt) {
+    artEl.src = song.albumArt;
+    artEl.classList.add('loaded');
+    artPh.style.display = 'none';
+  } else {
+    artEl.classList.remove('loaded');
+    artPh.style.display = 'flex';
+  }
+
+  $('np-title').textContent  = song.title  || '—';
+  $('np-artist').textContent = song.artist || '—';
+  $('np-album').textContent  = song.album  || '';
+
+  $('preview-song').textContent   = song.title  || '—';
+  $('preview-artist').textContent = song.artist || '—';
+
+  startProgressTimer(song);
+}
+
+function initLoginView() {
+  $('login-btn').addEventListener('click', async () => {
+    $('login-error').classList.add('hidden');
+    $('login-btn').disabled = true;
+
+    const result = await browser.runtime.sendMessage({ type: 'LOGIN' }).catch(() => null);
+
+    if (!result || !result.ok) {
+      $('login-btn').disabled = false;
+      showError(result?.error || 'Could not open Discord tab.');
+      return;
+    }
+
+    $('login-btn').style.display     = 'none';
+    $('login-waiting').style.display = 'flex';
+    startConnectionPoll();
+  });
+}
+
+function initMainView() {
+  $('rpc-toggle').addEventListener('change', (e) => {
+    $('rpc-state-label').textContent = e.target.checked ? 'ON' : 'OFF';
+    browser.runtime.sendMessage({ type: 'TOGGLE_RPC', enabled: e.target.checked });
+  });
+
+  $('logout-btn').addEventListener('click', async () => {
+    if (!confirm('Disconnect from Discord?')) return;
+    await browser.runtime.sendMessage({ type: 'LOGOUT' });
+    const s = await browser.runtime.sendMessage({ type: 'GET_STATE' });
+    render(s);
+  });
+}
+
+browser.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'STATE_UPDATE') render(msg.state);
+});
+
+async function init() {
+  const savedTheme = localStorage.getItem('yt-music-rpc_theme');
+  if (savedTheme === 'light') document.body.classList.add('theme-light');
+
+  $('theme-toggle').addEventListener('click', () => {
+    document.body.classList.toggle('theme-light');
+    const isLight = document.body.classList.contains('theme-light');
+    localStorage.setItem('yt-music-rpc_theme', isLight ? 'light' : 'dark');
+  });
+
+  initLoginView();
+  initMainView();
+
+  setLoading(true);
+  try {
+    const s = await browser.runtime.sendMessage({ type: 'GET_STATE' });
+    render(s);
+    if (s.hasToken && !s.connected) startConnectionPoll();
+  } catch (err) {
+    console.error('[yt-music-rpc]', err);
+    render({ connected: false, hasToken: false });
+  }
+  setLoading(false);
+}
+
+init();

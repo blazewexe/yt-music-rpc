@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>yt-music-rpc</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <header class="header">
+    <div class="header-logo">
+      <span class="logo-bracket">[</span>
+      <span class="logo-text">yt-music<span class="logo-accent">-rpc</span></span>
+      <span class="logo-bracket">]</span>
+    </div>
+    <div class="header-status">
+      <button class="icon-btn" id="theme-toggle" title="Toggle Theme" style="margin-right: 8px; font-size: 14px;">◐</button>
+      <span class="dot-blink" id="conn-dot">◉</span>
+      <span class="status-label" id="conn-label">OFFLINE</span>
+    </div>
+  </header>
+
+  <section class="view" id="view-login">
+    <div class="box">
+      <div class="box-title">// AUTHENTICATE</div>
+      <div class="ascii-art" aria-hidden="true">
+┌─────────────────────────────┐<br />
+│  yt-music-rpc  ·  v1.1      │<br />
+│  YT MUSIC → DISCORD RPC     │<br />
+└─────────────────────────────┘</div>
+      <p class="login-desc">
+        Connects to Discord using your existing<br />
+        browser session on <span class="accent">discord.com</span>.<br />
+        No passwords. No tokens to paste.
+      </p>
+
+      <div class="steps-list">
+        <div class="step"><span class="step-num">1</span><span>Make sure you are logged into <span class="accent">discord.com</span> in this browser</span></div>
+        <div class="step"><span class="step-num">2</span><span>Click Connect — a Discord tab will open briefly and close</span></div>
+        <div class="step"><span class="step-num">3</span><span>Come back here — you should be connected</span></div>
+      </div>
+
+      <button class="btn-primary" id="login-btn">CONNECT TO DISCORD ›</button>
+
+      <div class="login-waiting hidden" id="login-waiting">
+        <span class="dim blink">◈</span>
+        <span class="dim" style="letter-spacing:2px;font-size:10px;">READING DISCORD SESSION</span>
+        <span class="blink dim">_</span>
+      </div>
+
+      <div class="error-msg hidden" id="login-error"></div>
+    </div>
+  </section>
+
+  <section class="view" id="view-main">
+
+    <div class="box user-card" id="user-card">
+      <div class="user-avatar-wrap">
+        <img class="user-avatar" id="user-avatar" src="" alt="avatar" />
+        <span class="avatar-status" id="avatar-status-dot"></span>
+      </div>
+      <div class="user-info">
+        <div class="user-name" id="user-name">USERNAME</div>
+        <div class="user-tag"  id="user-tag">#0000</div>
+      </div>
+      <button class="icon-btn logout-btn" id="logout-btn" title="Disconnect">✕</button>
+    </div>
+
+    <div class="box controls-row">
+      <span class="ctrl-label">RICH PRESENCE</span>
+      <label class="toggle" id="rpc-toggle-wrap">
+        <input type="checkbox" id="rpc-toggle" checked />
+        <span class="toggle-track">
+          <span class="toggle-thumb"></span>
+        </span>
+        <span class="toggle-state" id="rpc-state-label">ON</span>
+      </label>
+    </div>
+
+    <div class="box now-playing-box">
+      <div class="box-title">// NOW PLAYING</div>
+
+      <div class="np-content" id="np-content">
+        <div class="np-art-wrap">
+          <img class="np-art" id="np-art" src="" alt="album art" />
+          <div class="np-art-placeholder" id="np-art-placeholder">♪</div>
+        </div>
+        <div class="np-meta">
+          <div class="np-title"  id="np-title">—</div>
+          <div class="np-artist" id="np-artist">—</div>
+          <div class="np-album"  id="np-album"></div>
+        </div>
+      </div>
+
+      <div class="np-progress-wrap" id="np-progress-wrap">
+        <span class="np-time" id="np-elapsed">0:00</span>
+        <div class="np-bar-outer">
+          <div class="np-bar-inner" id="np-bar-inner"></div>
+          <span class="np-cursor blink">█</span>
+        </div>
+        <span class="np-time" id="np-duration">0:00</span>
+      </div>
+
+      <div class="np-idle" id="np-idle">
+        <span class="dim">WAITING FOR TRACK</span>
+        <span class="blink dim">_</span>
+      </div>
+    </div>
+
+    <div class="box preview-box">
+      <div class="box-title">// DISCORD PREVIEW</div>
+      <div class="preview-row">
+        <span class="dim">TYPE  </span>
+        <span class="accent">LISTENING TO YOUTUBE MUSIC</span>
+      </div>
+      <div class="preview-row">
+        <span class="dim">SONG  </span>
+        <span id="preview-song">—</span>
+      </div>
+      <div class="preview-row">
+        <span class="dim">ARTIST</span>
+        <span id="preview-artist">—</span>
+      </div>
+    </div>
+
+  </section>
+
+  <div class="loading-overlay hidden" id="loading-overlay">
+    <span class="loading-text blink">LOADING<span>…</span></span>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
