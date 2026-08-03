@@ -30,7 +30,7 @@
       <div class="box-title">// AUTHENTICATE</div>
       <div class="ascii-art" aria-hidden="true">
 ┌─────────────────────────────┐<br />
-│  yt-music-rpc  ·  v1.2      │<br />
+│  yt-music-rpc  ·  v1.2.1    │<br />
 │  YT MUSIC → DISCORD RPC     │<br />
 └─────────────────────────────┘</div>
       <p class="login-desc">
@@ -139,8 +139,28 @@
         <span class="lfm-scrobble-badge hidden" id="lfm-badge">0 scrobbles</span>
       </div>
 
-      <!-- Not connected state -->
-      <div id="lfm-login-form">
+      <!-- API Key setup (shown when no keys are saved) -->
+      <div id="lfm-keys-form">
+        <p class="login-desc" style="margin-bottom:8px;">
+          Enter your Last.fm API credentials.<br />
+          <a class="lfm-api-link" href="https://www.last.fm/api/account/create" target="_blank">
+            Get a free API key →
+          </a>
+        </p>
+        <div class="lfm-field">
+          <label class="lfm-label" for="lfm-api-key">API KEY</label>
+          <input class="lfm-input" id="lfm-api-key" type="text" autocomplete="off" placeholder="paste your API key" spellcheck="false" />
+        </div>
+        <div class="lfm-field">
+          <label class="lfm-label" for="lfm-api-secret">API SECRET</label>
+          <input class="lfm-input" id="lfm-api-secret" type="password" autocomplete="off" placeholder="paste your API secret" spellcheck="false" />
+        </div>
+        <div class="error-msg hidden" id="lfm-keys-error"></div>
+        <button class="btn-primary" id="lfm-save-keys-btn" style="margin-top:8px;">SAVE API KEYS ›</button>
+      </div>
+
+      <!-- Login form (shown once keys are saved, while not connected) -->
+      <div id="lfm-login-form" class="hidden">
         <p class="login-desc" style="margin-bottom:8px;">
           Connect Last.fm to scrobble tracks<br />automatically as you listen.
         </p>
@@ -153,7 +173,10 @@
           <input class="lfm-input" id="lfm-password" type="password" autocomplete="current-password" placeholder="••••••••" />
         </div>
         <div class="error-msg hidden" id="lfm-error"></div>
-        <button class="btn-primary" id="lfm-connect-btn" style="margin-top:8px;">CONNECT LAST.FM ›</button>
+        <div style="display:flex;gap:6px;margin-top:8px;align-items:center;">
+          <button class="btn-primary" id="lfm-connect-btn" style="flex:1;margin-top:0;">CONNECT LAST.FM ›</button>
+          <button class="icon-btn" id="lfm-change-keys-btn" title="Change API keys" style="border:1px solid var(--border-hi);padding:4px 8px;font-size:10px;letter-spacing:1px;">KEYS</button>
+        </div>
       </div>
 
       <!-- Connected state -->
@@ -161,6 +184,7 @@
         <div class="lfm-user-row">
           <span class="lfm-logo" aria-hidden="true">◎</span>
           <span class="lfm-connected-name" id="lfm-connected-name">username</span>
+          <button class="icon-btn" id="lfm-change-keys-btn-conn" title="Change API keys" style="font-size:9px;letter-spacing:1px;border:1px solid var(--border-hi);padding:2px 6px;margin-right:4px;">KEYS</button>
           <button class="icon-btn" id="lfm-disconnect-btn" title="Disconnect Last.fm">✕</button>
         </div>
         <div class="controls-row" style="padding:0;margin-top:8px;">

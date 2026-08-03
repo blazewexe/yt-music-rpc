@@ -12,9 +12,9 @@
 
 const LASTFM_API_ROOT = 'https://ws.audioscrobbler.com/2.0/';
 
-// LASTFM_API_KEY and LASTFM_API_SECRET are defined in lastfm-config.js
-// which is loaded before this file (see manifest.json) and is gitignored.
-// Copy lastfm-config.example.js → lastfm-config.js and fill in your values.
+// API credentials are stored in browser.storage.local — never bundled in the
+// extension package. Users enter their own key/secret via the extension popup.
+// Register a free API app at: https://www.last.fm/api/account/create
 
 // ─── MD5 implementation (RFC 1321, no external deps) ──────────────────────
 function md5(inputStr) {
@@ -137,17 +137,18 @@ function md5(inputStr) {
 // ─── API Signature ─────────────────────────────────────────────────────────
 // Last.fm API signature: sorted params (excluding format/callback) joined as
 // key+value pairs, then append the shared secret, then MD5 the whole string.
-function apiSign(params) {
+function apiSign(params, apiSecret) {
   const sorted = Object.keys(params).filter(k => k !== 'format').sort();
-  const sigStr = sorted.map(k => k + params[k]).join('') + LASTFM_API_SECRET;
+  const sigStr = sorted.map(k => k + params[k]).join('') + apiSecret;
   return md5(sigStr);
 }
 
 // ─── HTTP helpers ──────────────────────────────────────────────────────────
-async function lfmPost(params) {
-  params.api_key = LASTFM_API_KEY;
+async function lfmPost(params, apiKey, apiSecret) {
+  if (!apiKey || !apiSecret) throw new Error('Last.fm API keys not configured. Open the extension popup and enter your API key and secret.');
+  params.api_key = apiKey;
   params.format = 'json';
-  params.api_sig = apiSign(params);
+  params.api_sig = apiSign(params, apiSecret);
 
   const body = new URLSearchParams(params).toString();
   const res = await fetch(LASTFM_API_ROOT, {
@@ -167,19 +168,19 @@ async function lfmPost(params) {
  * Authenticate and return a persistent session key.
  * Password is MD5-hashed before sending (Last.fm mobile auth spec).
  */
-async function getMobileSession(username, password) {
+async function getMobileSession(username, password, apiKey, apiSecret) {
   const data = await lfmPost({
     method: 'auth.getMobileSession',
     username,
     authToken: md5(username.toLowerCase() + md5(password)),
-  });
+  }, apiKey, apiSecret);
   return data.session.key; // persist this, not the password
 }
 
 /**
  * Tell Last.fm what's currently playing (no scrobble, just "now playing" widget).
  */
-async function updateNowPlaying(sessionKey, song) {
+async function updateNowPlaying(sessionKey, song, apiKey, apiSecret) {
   if (!sessionKey || !song || !song.title) return;
   const params = {
     method: 'track.updateNowPlaying',
@@ -190,7 +191,7 @@ async function updateNowPlaying(sessionKey, song) {
   };
   if (song.duration) params.duration = String(Math.floor(song.duration));
   try {
-    await lfmPost(params);
+    await lfmPost(params, apiKey, apiSecret);
     console.log('[lastfm] Now playing:', song.title);
   } catch (e) {
     console.error('[lastfm] updateNowPlaying failed:', e.message);
@@ -200,7 +201,7 @@ async function updateNowPlaying(sessionKey, song) {
 /**
  * Scrobble a track. timestamp is Unix seconds (when track *started* playing).
  */
-async function scrobble(sessionKey, song, timestamp) {
+async function scrobble(sessionKey, song, timestamp, apiKey, apiSecret) {
   if (!sessionKey || !song || !song.title) return;
   const params = {
     method: 'track.scrobble',
@@ -212,7 +213,7 @@ async function scrobble(sessionKey, song, timestamp) {
   };
   if (song.duration) params['duration[0]'] = String(Math.floor(song.duration));
   try {
-    const res = await lfmPost(params);
+    const res = await lfmPost(params, apiKey, apiSecret);
     const accepted = res?.scrobbles?.['@attr']?.accepted;
     console.log(`[lastfm] Scrobbled: "${song.title}" (accepted=${accepted})`);
     return { ok: true, accepted };
@@ -224,3 +225,5 @@ async function scrobble(sessionKey, song, timestamp) {
 
 // getMobileSession, updateNowPlaying, and scrobble are globals — background.js
 // uses them directly since all background scripts share the same scope.
+// Each function now accepts (apiKey, apiSecret) as the last two arguments;
+// background.js reads these from browser.storage.local and passes them in.

@@ -31,6 +31,8 @@ let state = {
   assetCache:  new Map(),
 
   // Last.fm
+  lastfmApiKey:     null,   // stored in browser.storage.local by the user
+  lastfmApiSecret:  null,   // stored in browser.storage.local by the user
   lastfmSessionKey: null,
   lastfmUsername:   null,
   lastfmEnabled:    true,
@@ -67,7 +69,7 @@ function scheduleScrobble(song) {
     if (scrobbleTrackKey === trackKey) return; // race-condition guard
     scrobbleTrackKey = trackKey;
 
-    const result = await scrobble(state.lastfmSessionKey, song, startTs);
+    const result = await scrobble(state.lastfmSessionKey, song, startTs, state.lastfmApiKey, state.lastfmApiSecret);
     if (result?.ok) {
       state.lastfmScrobbles++;
       broadcastState();
@@ -86,7 +88,7 @@ async function lfmUpdateNowPlaying(song) {
   const key = `${song.title}::${song.artist || ''}`;
   if (state.lastfmNowPlaying === key) return; // avoid spamming the same track
   state.lastfmNowPlaying = key;
-  await updateNowPlaying(state.lastfmSessionKey, song);
+  await updateNowPlaying(state.lastfmSessionKey, song, state.lastfmApiKey, state.lastfmApiSecret);
 }
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
@@ -104,12 +106,15 @@ let isResuming       = false;
 async function loadState() {
   const stored = await browser.storage.local.get([
     'token', 'user', 'rpcEnabled', 'status',
+    'lastfmApiKey', 'lastfmApiSecret',
     'lastfmSessionKey', 'lastfmUsername', 'lastfmEnabled', 'lastfmScrobbles',
   ]);
   if (stored.token            != null) state.token            = stored.token;
   if (stored.user             != null) state.user             = stored.user;
   if (stored.rpcEnabled       != null) state.rpcEnabled       = stored.rpcEnabled;
   if (stored.status           != null) state.status           = stored.status;
+  if (stored.lastfmApiKey     != null) state.lastfmApiKey     = stored.lastfmApiKey;
+  if (stored.lastfmApiSecret  != null) state.lastfmApiSecret  = stored.lastfmApiSecret;
   if (stored.lastfmSessionKey != null) state.lastfmSessionKey = stored.lastfmSessionKey;
   if (stored.lastfmUsername   != null) state.lastfmUsername   = stored.lastfmUsername;
   if (stored.lastfmEnabled    != null) state.lastfmEnabled    = stored.lastfmEnabled;
@@ -122,6 +127,8 @@ function persist() {
     user:             state.user,
     rpcEnabled:       state.rpcEnabled,
     status:           state.status,
+    lastfmApiKey:     state.lastfmApiKey,
+    lastfmApiSecret:  state.lastfmApiSecret,
     lastfmSessionKey: state.lastfmSessionKey,
     lastfmUsername:   state.lastfmUsername,
     lastfmEnabled:    state.lastfmEnabled,
@@ -430,6 +437,7 @@ function getPublicState() {
     currentSong: state.currentSong,
     hasToken:    !!state.token,
     // Last.fm
+    lastfmKeysSet:   !!(state.lastfmApiKey && state.lastfmApiSecret),
     lastfmConnected: !!state.lastfmSessionKey,
     lastfmUsername:  state.lastfmUsername,
     lastfmEnabled:   state.lastfmEnabled,
@@ -516,7 +524,11 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // ── Last.fm ───────────────────────────────────────────────────────────────
     case 'LASTFM_LOGIN': {
       const { username, password } = msg;
-      getMobileSession(username, password)
+      if (!state.lastfmApiKey || !state.lastfmApiSecret) {
+        sendResponse({ ok: false, error: 'API keys not set. Enter your Last.fm API Key and Secret first.' });
+        return true;
+      }
+      getMobileSession(username, password, state.lastfmApiKey, state.lastfmApiSecret)
         .then(sessionKey => {
           state.lastfmSessionKey = sessionKey;
           state.lastfmUsername   = username;
@@ -552,6 +564,27 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       broadcastState();
       sendResponse({ ok: true });
       return true;
+
+    case 'LASTFM_SAVE_KEYS': {
+      const { apiKey, apiSecret } = msg;
+      if (!apiKey || !apiSecret) {
+        sendResponse({ ok: false, error: 'Both API Key and API Secret are required.' });
+        return true;
+      }
+      state.lastfmApiKey    = apiKey.trim();
+      state.lastfmApiSecret = apiSecret.trim();
+      // If there was a previous session, clear it — keys changed so session is invalid
+      state.lastfmSessionKey = null;
+      state.lastfmUsername   = null;
+      state.lastfmScrobbles  = 0;
+      state.lastfmNowPlaying = null;
+      clearScrobbleTimer();
+      scrobbleTrackKey = null;
+      persist();
+      broadcastState();
+      sendResponse({ ok: true });
+      return true;
+    }
 
     case 'TOGGLE_SCROBBLE':
       state.lastfmEnabled = msg.enabled;

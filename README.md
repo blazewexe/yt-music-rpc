@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-1.2.0-blue?style=for-the-badge" alt="Version 1.2.0" />
+  <img src="https://img.shields.io/badge/Version-1.2.1-blue?style=for-the-badge" alt="Version 1.2.1" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License" />
   <img src="https://img.shields.io/badge/Platform-Cross--Browser-orange?style=for-the-badge" alt="Cross Browser" />
 </p>
@@ -62,12 +62,13 @@
 6. Navigate to [music.youtube.com](https://music.youtube.com) and start playing music to see it update.
 
 ### Last.fm Scrobbling (Optional)
-1. In the popup, scroll to the **// LAST.FM** section.
-2. Enter your Last.fm username and password and click **CONNECT LAST.FM ›**.
-3. Your password is MD5-hashed client-side before transmission and is never stored — only the session key is persisted.
-4. Toggle scrobbling on/off at any time without disconnecting.
-
-> **Note for contributors / self-builders:** Copy `lastfm-config.example.js` to `lastfm-config.js` and fill in your own API key and shared secret from [last.fm/api/account/create](https://www.last.fm/api/account/create). `lastfm-config.js` is gitignored and will never be committed.
+1. Register a free API application at [last.fm/api/account/create](https://www.last.fm/api/account/create) (takes ~30 seconds).
+2. Click the **yt-music-rpc** toolbar icon to open the popup.
+3. In the popup, scroll to the **// LAST.FM** section.
+4. Paste your **API Key** and **API Secret** and click **SAVE API KEYS ›**.
+5. Once saved, enter your Last.fm username and password and click **CONNECT LAST.FM ›**.
+6. Your credentials are saved securely in browser extension storage (`browser.storage.local`) and are never sent anywhere except directly to Last.fm's API.
+7. Toggle scrobbling on/off at any time without disconnecting.
 
 ---
 
@@ -82,7 +83,7 @@ yt-music-rpc/
 ├── content.js               # Scrapes YouTube Music player via MediaSession & <video> events
 ├── discord-cs.js            # Local token extractor fallback for Discord auth
 ├── lastfm.js                # Last.fm API helper (MD5 signing, auth, nowPlaying, scrobble)
-├── lastfm-config.example.js # Credential template — copy to lastfm-config.js (gitignored)
+├── lastfm-config.example.js # Reference file explaining the new API storage layout
 └── popup/
     ├── popup.html           # Dot-matrix user interface
     ├── popup.js             # Live state synchronization, Discord + Last.fm wiring

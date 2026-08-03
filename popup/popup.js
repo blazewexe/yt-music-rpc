@@ -187,12 +187,15 @@ function renderNowPlaying({ rpcEnabled, currentSong }) {
 }
 
 // ─── Last.fm render ───────────────────────────────────────────────────────────
-function renderLastFm({ lastfmConnected, lastfmUsername, lastfmEnabled, lastfmScrobbles, currentSong }) {
-  const loginForm    = $('lfm-login-form');
+function renderLastFm({ lastfmKeysSet, lastfmConnected, lastfmUsername, lastfmEnabled, lastfmScrobbles, currentSong }) {
+  const keysForm      = $('lfm-keys-form');
+  const loginForm     = $('lfm-login-form');
   const connectedView = $('lfm-connected-view');
-  const badge        = $('lfm-badge');
+  const badge         = $('lfm-badge');
 
   if (lastfmConnected) {
+    // ── Connected: hide both forms, show connected view ──
+    keysForm.classList.add('hidden');
     loginForm.classList.add('hidden');
     connectedView.classList.remove('hidden');
 
@@ -220,8 +223,16 @@ function renderLastFm({ lastfmConnected, lastfmUsername, lastfmEnabled, lastfmSc
       label.textContent = 'waiting for track…';
       label.style.color = '';
     }
-  } else {
+  } else if (lastfmKeysSet) {
+    // ── Keys saved, not yet logged in: show login form ──
+    keysForm.classList.add('hidden');
     loginForm.classList.remove('hidden');
+    connectedView.classList.add('hidden');
+    badge.classList.add('hidden');
+  } else {
+    // ── No keys yet: show key entry form ──
+    keysForm.classList.remove('hidden');
+    loginForm.classList.add('hidden');
     connectedView.classList.add('hidden');
     badge.classList.add('hidden');
   }
@@ -264,7 +275,61 @@ function initMainView() {
 
 // ─── Last.fm wiring ───────────────────────────────────────────────────────────
 function initLastFm() {
-  // Connect button
+
+  // ── Save API Keys ────────────────────────────────────────────────────────
+  $('lfm-save-keys-btn').addEventListener('click', async () => {
+    const apiKey    = $('lfm-api-key').value.trim();
+    const apiSecret = $('lfm-api-secret').value.trim();
+
+    if (!apiKey || !apiSecret) {
+      const el = $('lfm-keys-error');
+      el.textContent = 'Both API Key and API Secret are required.';
+      el.classList.remove('hidden');
+      setTimeout(() => el.classList.add('hidden'), 6000);
+      return;
+    }
+
+    $('lfm-save-keys-btn').disabled = true;
+    $('lfm-save-keys-btn').textContent = 'SAVING…';
+    $('lfm-keys-error').classList.add('hidden');
+
+    const result = await browser.runtime.sendMessage({
+      type: 'LASTFM_SAVE_KEYS',
+      apiKey,
+      apiSecret,
+    }).catch(err => ({ ok: false, error: err.message }));
+
+    $('lfm-save-keys-btn').disabled = false;
+    $('lfm-save-keys-btn').textContent = 'SAVE API KEYS ›';
+
+    if (!result?.ok) {
+      const el = $('lfm-keys-error');
+      el.textContent = result?.error || 'Failed to save keys.';
+      el.classList.remove('hidden');
+      setTimeout(() => el.classList.add('hidden'), 6000);
+      return;
+    }
+
+    // Clear inputs and re-render
+    $('lfm-api-key').value    = '';
+    $('lfm-api-secret').value = '';
+    const s = await browser.runtime.sendMessage({ type: 'GET_STATE' });
+    renderLastFm(s);
+  });
+
+  // ── Change Keys buttons (login form & connected view) ────────────────────
+  function showKeysForm() {
+    $('lfm-keys-form').classList.remove('hidden');
+    $('lfm-login-form').classList.add('hidden');
+    $('lfm-connected-view').classList.add('hidden');
+  }
+  $('lfm-change-keys-btn').addEventListener('click', showKeysForm);
+  $('lfm-change-keys-btn-conn').addEventListener('click', () => {
+    if (!confirm('Changing API keys will disconnect your Last.fm account. Continue?')) return;
+    showKeysForm();
+  });
+
+  // ── Connect (username + password) ────────────────────────────────────────
   $('lfm-connect-btn').addEventListener('click', async () => {
     const username = $('lfm-username').value.trim();
     const password = $('lfm-password').value;
@@ -298,14 +363,19 @@ function initLastFm() {
     renderLastFm(s);
   });
 
-  // Allow Enter key to submit
+  // Allow Enter key to submit on both forms
   [$('lfm-username'), $('lfm-password')].forEach(input => {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') $('lfm-connect-btn').click();
     });
   });
+  [$('lfm-api-key'), $('lfm-api-secret')].forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') $('lfm-save-keys-btn').click();
+    });
+  });
 
-  // Disconnect button
+  // ── Disconnect ───────────────────────────────────────────────────────────
   $('lfm-disconnect-btn').addEventListener('click', async () => {
     if (!confirm('Disconnect Last.fm? Scrobbling will stop.')) return;
     await browser.runtime.sendMessage({ type: 'LASTFM_LOGOUT' });
@@ -313,7 +383,7 @@ function initLastFm() {
     renderLastFm(s);
   });
 
-  // Scrobble toggle
+  // ── Scrobble toggle ──────────────────────────────────────────────────────
   $('scrobble-toggle').addEventListener('change', (e) => {
     $('scrobble-state-label').textContent = e.target.checked ? 'ON' : 'OFF';
     browser.runtime.sendMessage({ type: 'TOGGLE_SCROBBLE', enabled: e.target.checked });
@@ -353,3 +423,4 @@ async function init() {
 }
 
 init();
+
