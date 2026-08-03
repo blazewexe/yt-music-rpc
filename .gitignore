@@ -29,3 +29,5 @@ ENV/
 # Firefox Dev Profile
 .firefox-profile/
 
+# Last.fm API credentials (never commit these)
+lastfm-config.js

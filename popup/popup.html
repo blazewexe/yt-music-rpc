@@ -24,12 +24,13 @@
     </div>
   </header>
 
+  <!-- ── LOGIN VIEW ─────────────────────────────────────────────────────── -->
   <section class="view" id="view-login">
     <div class="box">
       <div class="box-title">// AUTHENTICATE</div>
       <div class="ascii-art" aria-hidden="true">
 ┌─────────────────────────────┐<br />
-│  yt-music-rpc  ·  v1.1      │<br />
+│  yt-music-rpc  ·  v1.2      │<br />
 │  YT MUSIC → DISCORD RPC     │<br />
 └─────────────────────────────┘</div>
       <p class="login-desc">
@@ -56,8 +57,10 @@
     </div>
   </section>
 
+  <!-- ── MAIN VIEW ──────────────────────────────────────────────────────── -->
   <section class="view" id="view-main">
 
+    <!-- User card -->
     <div class="box user-card" id="user-card">
       <div class="user-avatar-wrap">
         <img class="user-avatar" id="user-avatar" src="" alt="avatar" />
@@ -70,6 +73,7 @@
       <button class="icon-btn logout-btn" id="logout-btn" title="Disconnect">✕</button>
     </div>
 
+    <!-- Discord RPC toggle -->
     <div class="box controls-row">
       <span class="ctrl-label">RICH PRESENCE</span>
       <label class="toggle" id="rpc-toggle-wrap">
@@ -81,6 +85,7 @@
       </label>
     </div>
 
+    <!-- Now Playing -->
     <div class="box now-playing-box">
       <div class="box-title">// NOW PLAYING</div>
 
@@ -111,6 +116,7 @@
       </div>
     </div>
 
+    <!-- Discord preview -->
     <div class="box preview-box">
       <div class="box-title">// DISCORD PREVIEW</div>
       <div class="preview-row">
@@ -124,6 +130,52 @@
       <div class="preview-row">
         <span class="dim">ARTIST</span>
         <span id="preview-artist">—</span>
+      </div>
+    </div>
+
+    <!-- ── LAST.FM ──────────────────────────────────────────────────────── -->
+    <div class="box lastfm-box">
+      <div class="box-title">// LAST.FM
+        <span class="lfm-scrobble-badge hidden" id="lfm-badge">0 scrobbles</span>
+      </div>
+
+      <!-- Not connected state -->
+      <div id="lfm-login-form">
+        <p class="login-desc" style="margin-bottom:8px;">
+          Connect Last.fm to scrobble tracks<br />automatically as you listen.
+        </p>
+        <div class="lfm-field">
+          <label class="lfm-label" for="lfm-username">USERNAME</label>
+          <input class="lfm-input" id="lfm-username" type="text" autocomplete="username" placeholder="last.fm username" spellcheck="false" />
+        </div>
+        <div class="lfm-field">
+          <label class="lfm-label" for="lfm-password">PASSWORD</label>
+          <input class="lfm-input" id="lfm-password" type="password" autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <div class="error-msg hidden" id="lfm-error"></div>
+        <button class="btn-primary" id="lfm-connect-btn" style="margin-top:8px;">CONNECT LAST.FM ›</button>
+      </div>
+
+      <!-- Connected state -->
+      <div id="lfm-connected-view" class="hidden">
+        <div class="lfm-user-row">
+          <span class="lfm-logo" aria-hidden="true">◎</span>
+          <span class="lfm-connected-name" id="lfm-connected-name">username</span>
+          <button class="icon-btn" id="lfm-disconnect-btn" title="Disconnect Last.fm">✕</button>
+        </div>
+        <div class="controls-row" style="padding:0;margin-top:8px;">
+          <span class="ctrl-label">SCROBBLING</span>
+          <label class="toggle">
+            <input type="checkbox" id="scrobble-toggle" checked />
+            <span class="toggle-track">
+              <span class="toggle-thumb"></span>
+            </span>
+            <span class="toggle-state" id="scrobble-state-label">ON</span>
+          </label>
+        </div>
+        <div class="lfm-status-row" id="lfm-status-row">
+          <span class="dim" id="lfm-now-playing-label"></span>
+        </div>
       </div>
     </div>
 

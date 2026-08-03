@@ -2,6 +2,8 @@
 
 if (typeof browser === 'undefined') { var browser = chrome; }
 
+// lastfm.js is loaded before this file via manifest.json background.scripts order
+
 const GATEWAY_URL = 'wss://gateway.discord.gg/?v=10&encoding=json';
 
 const OP = {
@@ -16,7 +18,9 @@ const OP = {
   HEARTBEAT_ACK:   11,
 };
 
+// ─── Core state ─────────────────────────────────────────────────────────────
 let state = {
+  // Discord
   token:       null,
   user:        null,
   rpcEnabled:  true,
@@ -25,8 +29,67 @@ let state = {
   connected:   false,
   sessionId:   null,
   assetCache:  new Map(),
+
+  // Last.fm
+  lastfmSessionKey: null,
+  lastfmUsername:   null,
+  lastfmEnabled:    true,
+  lastfmScrobbles:  0,          // count this session
+  lastfmNowPlaying: null,       // "title::artist" key of the last nowPlaying sent
 };
 
+// ─── Scrobble timer ──────────────────────────────────────────────────────────
+// Official Last.fm scrobbling rules:
+//   • Track must be longer than 30 seconds
+//   • Scrobble fires when the user has listened to ≥ 50% of the track
+//     OR ≥ 4 minutes, whichever comes first
+//   • The same track+start-time is never scrobbled twice
+let scrobbleTimer    = null;
+let scrobbleTrackKey = null; // "title::artist::startTimestamp" — dedup guard
+
+function scheduleScrobble(song) {
+  clearScrobbleTimer();
+  if (!state.lastfmSessionKey || !state.lastfmEnabled) return;
+  if (!song || !song.title) return;
+
+  const duration = song.duration; // seconds
+  if (!duration || duration < 30) return; // Last.fm: < 30 s not scrobbled
+
+  const startTs  = song.startTimestamp ? Math.floor(song.startTimestamp / 1000) : Math.floor(Date.now() / 1000);
+  const trackKey = `${song.title}::${song.artist || ''}::${startTs}`;
+  if (scrobbleTrackKey === trackKey) return; // already scrobbled this play
+
+  // Delay = min(duration / 2, 240) seconds, converted to ms
+  const delayMs = Math.min((duration / 2) * 1000, 240_000);
+  console.log(`[lastfm] Will scrobble "${song.title}" in ${Math.round(delayMs / 1000)}s`);
+
+  scrobbleTimer = setTimeout(async () => {
+    if (scrobbleTrackKey === trackKey) return; // race-condition guard
+    scrobbleTrackKey = trackKey;
+
+    const result = await scrobble(state.lastfmSessionKey, song, startTs);
+    if (result?.ok) {
+      state.lastfmScrobbles++;
+      broadcastState();
+    }
+  }, delayMs);
+}
+
+function clearScrobbleTimer() {
+  clearTimeout(scrobbleTimer);
+  scrobbleTimer = null;
+}
+
+// ─── Last.fm: updateNowPlaying ───────────────────────────────────────────────
+async function lfmUpdateNowPlaying(song) {
+  if (!state.lastfmSessionKey || !state.lastfmEnabled || !song) return;
+  const key = `${song.title}::${song.artist || ''}`;
+  if (state.lastfmNowPlaying === key) return; // avoid spamming the same track
+  state.lastfmNowPlaying = key;
+  await updateNowPlaying(state.lastfmSessionKey, song);
+}
+
+// ─── Persistence ─────────────────────────────────────────────────────────────
 let loginTabId    = null;
 let tokenCaptured = false;
 
@@ -41,22 +104,32 @@ let isResuming       = false;
 async function loadState() {
   const stored = await browser.storage.local.get([
     'token', 'user', 'rpcEnabled', 'status',
+    'lastfmSessionKey', 'lastfmUsername', 'lastfmEnabled', 'lastfmScrobbles',
   ]);
-  if (stored.token      != null) state.token      = stored.token;
-  if (stored.user       != null) state.user       = stored.user;
-  if (stored.rpcEnabled != null) state.rpcEnabled = stored.rpcEnabled;
-  if (stored.status     != null) state.status     = stored.status;
+  if (stored.token            != null) state.token            = stored.token;
+  if (stored.user             != null) state.user             = stored.user;
+  if (stored.rpcEnabled       != null) state.rpcEnabled       = stored.rpcEnabled;
+  if (stored.status           != null) state.status           = stored.status;
+  if (stored.lastfmSessionKey != null) state.lastfmSessionKey = stored.lastfmSessionKey;
+  if (stored.lastfmUsername   != null) state.lastfmUsername   = stored.lastfmUsername;
+  if (stored.lastfmEnabled    != null) state.lastfmEnabled    = stored.lastfmEnabled;
+  if (stored.lastfmScrobbles  != null) state.lastfmScrobbles  = stored.lastfmScrobbles;
 }
 
 function persist() {
   browser.storage.local.set({
-    token:      state.token,
-    user:       state.user,
-    rpcEnabled: state.rpcEnabled,
-    status:     state.status,
+    token:            state.token,
+    user:             state.user,
+    rpcEnabled:       state.rpcEnabled,
+    status:           state.status,
+    lastfmSessionKey: state.lastfmSessionKey,
+    lastfmUsername:   state.lastfmUsername,
+    lastfmEnabled:    state.lastfmEnabled,
+    lastfmScrobbles:  state.lastfmScrobbles,
   });
 }
 
+// ─── Discord token capture ───────────────────────────────────────────────────
 let webRequestListener = null;
 let webRequestTimeout  = null;
 
@@ -68,14 +141,11 @@ function startWebRequestCapture() {
 
   webRequestListener = (details) => {
     if (tokenCaptured) return;
-
-    const headers = details.requestHeaders || [];
+    const headers    = details.requestHeaders || [];
     const authHeader = headers.find(h => h.name.toLowerCase() === 'authorization');
     if (!authHeader || !authHeader.value) return;
-
     const val = authHeader.value.trim();
     if (val.length < 20 || val.startsWith('Bot ') || val.startsWith('Bearer ')) return;
-
     console.log('[yt-music-rpc] Got token via webRequest');
     handleDiscordToken(val);
   };
@@ -112,63 +182,45 @@ function stopWebRequestCapture() {
 function handleDiscordToken(token) {
   if (tokenCaptured) return;
   tokenCaptured = true;
-
   stopWebRequestCapture();
   browser.storage.local.remove('pendingLogin');
-
   state.token = token;
   persist();
   connect();
-
   if (loginTabId != null) {
     const tid = loginTabId;
     loginTabId = null;
     setTimeout(() => browser.tabs.remove(tid).catch(() => {}), 3000);
   }
-
   broadcastState();
 }
 
+// ─── Discord Gateway ─────────────────────────────────────────────────────────
 function connect() {
   if (!state.token) return;
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-
   clearTimeout(reconnectTimer);
   console.log('[yt-music-rpc] Connecting to Discord Gateway…');
-
   try {
     ws = new WebSocket(GATEWAY_URL);
-
-    ws.onopen = () => {
-      console.log('[yt-music-rpc] Socket opened');
-      reconnectDelay = 1000;
-    };
-
+    ws.onopen = () => { console.log('[yt-music-rpc] Socket opened'); reconnectDelay = 1000; };
     ws.onmessage = (ev) => {
       try { handlePayload(JSON.parse(ev.data)); }
       catch (e) { console.error('[yt-music-rpc] Parse error:', e); }
     };
-
     ws.onclose = (ev) => {
       console.warn(`[yt-music-rpc] Gateway closed [${ev.code}]: ${ev.reason}`);
       state.connected = false;
       stopHeartbeat();
       broadcastState();
-
       if (ev.code === 4004) {
         console.error('[yt-music-rpc] Bad token (4004) — clearing.');
-        state.token = null;
-        state.user  = null;
-        persist();
-        broadcastState();
-        return;
+        state.token = null; state.user = null;
+        persist(); broadcastState(); return;
       }
-
       scheduleReconnect();
     };
-
     ws.onerror = (err) => console.error('[yt-music-rpc] WS error:', err);
-
   } catch (err) {
     console.error('[yt-music-rpc] connect() threw:', err);
     scheduleReconnect();
@@ -187,46 +239,27 @@ function disconnect(permanent = false) {
   clearTimeout(reconnectTimer);
   stopHeartbeat();
   if (permanent) { state.token = null; state.user = null; }
-  if (ws) {
-    const old = ws; ws = null;
-    old.close(1000, 'User disconnected');
-  }
+  if (ws) { const old = ws; ws = null; old.close(1000, 'User disconnected'); }
   state.connected = false;
 }
 
 function send(payload) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(payload));
-    return true;
-  }
+  if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify(payload)); return true; }
   return false;
 }
 
 function handlePayload({ op, d, s, t }) {
   if (s !== null && s !== undefined) seq = s;
-
   switch (op) {
     case OP.HELLO:
       startHeartbeat(d.heartbeat_interval);
-      if (isResuming && state.sessionId && seq) {
-        resume();
-      } else {
-        identify().catch(e => console.error('[yt-music-rpc] identify error:', e));
-      }
+      if (isResuming && state.sessionId && seq) { resume(); }
+      else { identify().catch(e => console.error('[yt-music-rpc] identify error:', e)); }
       break;
-    case OP.HEARTBEAT_ACK:
-      lastHeartbeatAck = true;
-      break;
-    case OP.HEARTBEAT:
-      sendHeartbeat();
-      break;
-    case OP.DISPATCH:
-      handleDispatch(t, d);
-      break;
-    case OP.RECONNECT:
-      isResuming = true;
-      ws.close(4000, 'Reconnect requested');
-      break;
+    case OP.HEARTBEAT_ACK: lastHeartbeatAck = true; break;
+    case OP.HEARTBEAT:     sendHeartbeat(); break;
+    case OP.DISPATCH:      handleDispatch(t, d); break;
+    case OP.RECONNECT:     isResuming = true; ws.close(4000, 'Reconnect requested'); break;
     case OP.INVALID_SESSION:
       console.warn('[yt-music-rpc] Invalid session — re-identifying in 5s');
       isResuming = false;
@@ -253,7 +286,6 @@ function handleDispatch(type, data) {
       pushPresence();
       broadcastState();
       break;
-
     case 'RESUMED':
       state.connected = true;
       isResuming      = false;
@@ -266,23 +298,13 @@ function handleDispatch(type, data) {
 function startHeartbeat(interval) {
   stopHeartbeat();
   const jitter = Math.floor(Math.random() * interval);
-  setTimeout(() => {
-    sendHeartbeat();
-    heartbeatTimer = setInterval(sendHeartbeat, interval);
-  }, jitter);
+  setTimeout(() => { sendHeartbeat(); heartbeatTimer = setInterval(sendHeartbeat, interval); }, jitter);
 }
-
-function stopHeartbeat() {
-  clearInterval(heartbeatTimer);
-  heartbeatTimer = null;
-}
-
+function stopHeartbeat() { clearInterval(heartbeatTimer); heartbeatTimer = null; }
 function sendHeartbeat() {
   if (!lastHeartbeatAck) {
     console.warn('[yt-music-rpc] No ACK — reconnecting');
-    isResuming = true;
-    ws.close(4000, 'Heartbeat timeout');
-    return;
+    isResuming = true; ws.close(4000, 'Heartbeat timeout'); return;
   }
   lastHeartbeatAck = false;
   send({ op: OP.HEARTBEAT, d: seq });
@@ -295,12 +317,11 @@ async function detectBrowser() {
     if (await navigator.brave.isBrave()) return 'Brave';
   }
   if (navigator.userAgentData && navigator.userAgentData.brands) {
-    const hasBrave = navigator.userAgentData.brands.some(b => b.brand === 'Brave');
-    if (hasBrave) return 'Brave';
+    if (navigator.userAgentData.brands.some(b => b.brand === 'Brave')) return 'Brave';
   }
-  if (ua.includes('Edg/'))    return 'Edge';
-  if (ua.includes('OPR/'))    return 'Opera';
-  if (ua.includes('Chrome'))  return 'Chrome';
+  if (ua.includes('Edg/'))   return 'Edge';
+  if (ua.includes('OPR/'))   return 'Opera';
+  if (ua.includes('Chrome')) return 'Chrome';
   return 'Browser';
 }
 
@@ -319,26 +340,18 @@ async function identify() {
 }
 
 function resume() {
-  send({
-    op: OP.RESUME,
-    d: { token: state.token, session_id: state.sessionId, seq },
-  });
+  send({ op: OP.RESUME, d: { token: state.token, session_id: state.sessionId, seq } });
 }
 
 async function resolveExternalAsset(url) {
   if (!url || !url.startsWith('http')) return null;
   if (state.assetCache.has(url)) return state.assetCache.get(url);
-
   try {
     const res = await fetch('https://discord.com/api/v10/applications/463151177836658699/external-assets', {
-      method: 'POST',
-      headers: {
-        'Authorization': state.token,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ urls: [url] })
+      method:  'POST',
+      headers: { 'Authorization': state.token, 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ urls: [url] }),
     });
-
     if (res.ok) {
       const data = await res.json();
       if (data && data.length > 0 && data[0].external_asset_path) {
@@ -347,17 +360,14 @@ async function resolveExternalAsset(url) {
         return hash;
       }
     }
-  } catch (err) {
-    console.error('[yt-music-rpc] Failed to resolve external asset:', err);
-  }
+  } catch (err) { console.error('[yt-music-rpc] Failed to resolve external asset:', err); }
   return null;
 }
 
 async function buildPresencePayload() {
   const activities = [];
-
   if (state.rpcEnabled && state.currentSong) {
-    const s = state.currentSong;
+    const s        = state.currentSong;
     const activity = {
       name:           'YouTube Music',
       application_id: '463151177836658699',
@@ -365,37 +375,30 @@ async function buildPresencePayload() {
       details:        s.title  || 'Unknown Track',
       state:          s.artist || 'Unknown Artist',
     };
-
     let largeImageKey = null;
     if (s.albumArt) {
-      const resolvedHash = await resolveExternalAsset(s.albumArt);
-      if (resolvedHash) largeImageKey = resolvedHash;
+      const h = await resolveExternalAsset(s.albumArt);
+      if (h) largeImageKey = h;
     }
-
     let smallImageKey = null;
-    const ytLogoUrl = 'https://raw.githubusercontent.com/walkxcode/dashboard-icons/main/png/youtube-music.png';
-    const resolvedSmall = await resolveExternalAsset(ytLogoUrl);
-    if (resolvedSmall) smallImageKey = resolvedSmall;
+    const ytLogo = 'https://raw.githubusercontent.com/walkxcode/dashboard-icons/main/png/youtube-music.png';
+    const sh = await resolveExternalAsset(ytLogo);
+    if (sh) smallImageKey = sh;
 
-    activity.assets = {
-      large_text: s.album || s.title || 'YouTube Music',
-      small_text: 'YouTube Music'
-    };
+    activity.assets = { large_text: s.album || s.title || 'YouTube Music', small_text: 'YouTube Music' };
     if (largeImageKey) activity.assets.large_image = largeImageKey;
     if (smallImageKey) activity.assets.small_image = smallImageKey;
 
     const songUrl = s.videoId ? `https://music.youtube.com/watch?v=${s.videoId}` : 'https://music.youtube.com/';
-    activity.buttons = ['Listen on YouTube Music'];
+    activity.buttons  = ['Listen on YouTube Music'];
     activity.metadata = { button_urls: [songUrl] };
 
     if (s.startTimestamp) {
       activity.timestamps = { start: s.startTimestamp };
       if (s.endTimestamp) activity.timestamps.end = s.endTimestamp;
     }
-
     activities.push(activity);
   }
-
   return {
     since:      state.status === 'idle' ? Date.now() : null,
     activities,
@@ -419,35 +422,33 @@ function broadcastState(extra = {}) {
 
 function getPublicState() {
   return {
+    // Discord
     connected:   state.connected,
     user:        state.user,
     rpcEnabled:  state.rpcEnabled,
     status:      state.status,
     currentSong: state.currentSong,
     hasToken:    !!state.token,
+    // Last.fm
+    lastfmConnected: !!state.lastfmSessionKey,
+    lastfmUsername:  state.lastfmUsername,
+    lastfmEnabled:   state.lastfmEnabled,
+    lastfmScrobbles: state.lastfmScrobbles,
   };
 }
 
 async function initiateLogin() {
   startWebRequestCapture();
   await browser.storage.local.set({ pendingLogin: true });
-
   try {
-    const existing = await browser.tabs.query({
-      url: ['https://discord.com/*', 'https://discordapp.com/*'],
-    });
-
+    const existing = await browser.tabs.query({ url: ['https://discord.com/*', 'https://discordapp.com/*'] });
     if (existing.length > 0) {
       loginTabId = existing[0].id;
       await browser.tabs.reload(loginTabId);
     } else {
-      const tab = await browser.tabs.create({
-        url:    'https://discord.com/channels/@me',
-        active: false,
-      });
+      const tab  = await browser.tabs.create({ url: 'https://discord.com/channels/@me', active: false });
       loginTabId = tab.id;
     }
-
     return { ok: true };
   } catch (err) {
     stopWebRequestCapture();
@@ -456,16 +457,23 @@ async function initiateLogin() {
   }
 }
 
+// ─── Message handler ─────────────────────────────────────────────────────────
 browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   switch (msg.type) {
+
+    // ── Discord ──────────────────────────────────────────────────────────────
     case 'SONG_UPDATE':
       state.currentSong = msg.song;
       pushPresence().catch(console.error);
+      lfmUpdateNowPlaying(msg.song);
+      scheduleScrobble(msg.song);
       broadcastState();
       break;
 
     case 'SONG_STOP':
-      state.currentSong = null;
+      state.currentSong      = null;
+      state.lastfmNowPlaying = null;
+      clearScrobbleTimer();
       pushPresence().catch(console.error);
       broadcastState();
       break;
@@ -502,6 +510,58 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.status = msg.status;
       persist();
       pushPresence().catch(console.error);
+      broadcastState();
+      break;
+
+    // ── Last.fm ───────────────────────────────────────────────────────────────
+    case 'LASTFM_LOGIN': {
+      const { username, password } = msg;
+      getMobileSession(username, password)
+        .then(sessionKey => {
+          state.lastfmSessionKey = sessionKey;
+          state.lastfmUsername   = username;
+          state.lastfmEnabled    = true;
+          state.lastfmScrobbles  = 0;
+          state.lastfmNowPlaying = null;
+          scrobbleTrackKey       = null;
+          persist();
+          broadcastState();
+          sendResponse({ ok: true, username });
+          // Immediately update nowPlaying if a track is already playing
+          if (state.currentSong) {
+            lfmUpdateNowPlaying(state.currentSong);
+            scheduleScrobble(state.currentSong);
+          }
+        })
+        .catch(err => {
+          console.error('[lastfm] Login failed:', err);
+          sendResponse({ ok: false, error: err.message });
+        });
+      return true;
+    }
+
+    case 'LASTFM_LOGOUT':
+      state.lastfmSessionKey = null;
+      state.lastfmUsername   = null;
+      state.lastfmEnabled    = true;
+      state.lastfmScrobbles  = 0;
+      state.lastfmNowPlaying = null;
+      clearScrobbleTimer();
+      scrobbleTrackKey = null;
+      persist();
+      broadcastState();
+      sendResponse({ ok: true });
+      return true;
+
+    case 'TOGGLE_SCROBBLE':
+      state.lastfmEnabled = msg.enabled;
+      persist();
+      if (state.lastfmEnabled && state.currentSong) {
+        lfmUpdateNowPlaying(state.currentSong);
+        scheduleScrobble(state.currentSong);
+      } else if (!state.lastfmEnabled) {
+        clearScrobbleTimer();
+      }
       broadcastState();
       break;
   }

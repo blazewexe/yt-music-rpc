@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "yt-music-rpc",
-  "version": "1.1.0",
-  "description": "YouTube Music → Discord Rich Presence. No desktop app required.",
+  "version": "1.2.0",
+  "description": "YouTube Music → Discord Rich Presence + Last.fm Scrobbling. No desktop app required.",
   "author": "yt-music-rpc",
   "browser_specific_settings": {
     "gecko": {
@@ -22,10 +22,13 @@
     "webRequestBlocking",
     "https://discord.com/*",
     "https://discordapp.com/*",
-    "https://music.youtube.com/*"
+    "https://music.youtube.com/*",
+    "https://ws.audioscrobbler.com/*"
   ],
   "background": {
     "scripts": [
+      "lastfm-config.js",
+      "lastfm.js",
       "background.js"
     ],
     "persistent": true

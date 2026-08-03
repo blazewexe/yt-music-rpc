@@ -4,9 +4,10 @@ if (typeof browser === 'undefined') { var browser = chrome; }
 
 const $ = (id) => document.getElementById(id);
 
+// ─── View helpers ─────────────────────────────────────────────────────────────
 function showView(name) {
   $('view-login').classList.toggle('active', name === 'login');
-  $('view-main').classList.toggle('active', name === 'main');
+  $('view-main').classList.toggle('active',  name === 'main');
 }
 
 function setLoading(on) {
@@ -15,6 +16,13 @@ function setLoading(on) {
 
 function showError(msg) {
   const el = $('login-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 8000);
+}
+
+function showLfmError(msg) {
+  const el = $('lfm-error');
   el.textContent = msg;
   el.classList.remove('hidden');
   setTimeout(() => el.classList.add('hidden'), 8000);
@@ -36,6 +44,7 @@ function fmtTime(secs) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+// ─── Connection poll (while Discord token is loading) ─────────────────────────
 let pollTimer = null;
 
 function startConnectionPoll() {
@@ -49,9 +58,7 @@ function startConnectionPoll() {
         stopConnectionPoll();
         render(s);
       }
-    } catch {
-      stopConnectionPoll();
-    }
+    } catch { stopConnectionPoll(); }
   }, 500);
 }
 
@@ -60,6 +67,7 @@ function stopConnectionPoll() {
   pollTimer = null;
 }
 
+// ─── Progress bar timer ───────────────────────────────────────────────────────
 let progressTimer = null;
 
 function startProgressTimer(song) {
@@ -75,9 +83,9 @@ function startProgressTimer(song) {
     const bar = $('np-bar-inner');
     const el  = $('np-elapsed');
     const dur = $('np-duration');
-    if (bar) bar.style.width  = `${pct}%`;
-    if (el)  el.textContent   = fmtTime(elapsed);
-    if (dur) dur.textContent  = fmtTime(total);
+    if (bar) bar.style.width = `${pct}%`;
+    if (el)  el.textContent  = fmtTime(elapsed);
+    if (dur) dur.textContent = fmtTime(total);
   }
   tick();
   progressTimer = setInterval(tick, 1000);
@@ -88,6 +96,7 @@ function stopProgressTimer() {
   progressTimer = null;
 }
 
+// ─── Main render ──────────────────────────────────────────────────────────────
 function render(state) {
   const hdr = document.querySelector('.header-status');
   hdr.classList.toggle('connected', state.connected);
@@ -118,12 +127,13 @@ function render(state) {
   renderUser(state);
   renderControls(state);
   renderNowPlaying(state);
+  renderLastFm(state);
 }
 
 function renderUser({ user, status }) {
-  $('user-avatar').src          = avatarURL(user);
-  $('user-name').textContent    = user.global_name || user.username;
-  $('user-tag').textContent     = user.discriminator && user.discriminator !== '0'
+  $('user-avatar').src       = avatarURL(user);
+  $('user-name').textContent = user.global_name || user.username;
+  $('user-tag').textContent  = user.discriminator && user.discriminator !== '0'
     ? `#${user.discriminator}`
     : `@${user.username}`;
   $('avatar-status-dot').className = `avatar-status ${status}`;
@@ -176,6 +186,48 @@ function renderNowPlaying({ rpcEnabled, currentSong }) {
   startProgressTimer(song);
 }
 
+// ─── Last.fm render ───────────────────────────────────────────────────────────
+function renderLastFm({ lastfmConnected, lastfmUsername, lastfmEnabled, lastfmScrobbles, currentSong }) {
+  const loginForm    = $('lfm-login-form');
+  const connectedView = $('lfm-connected-view');
+  const badge        = $('lfm-badge');
+
+  if (lastfmConnected) {
+    loginForm.classList.add('hidden');
+    connectedView.classList.remove('hidden');
+
+    $('lfm-connected-name').textContent  = lastfmUsername || '';
+    $('scrobble-toggle').checked         = lastfmEnabled;
+    $('scrobble-state-label').textContent = lastfmEnabled ? 'ON' : 'OFF';
+
+    // Scrobble count badge
+    if (lastfmScrobbles > 0) {
+      badge.textContent = `${lastfmScrobbles} scrobble${lastfmScrobbles !== 1 ? 's' : ''}`;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+
+    // "Now playing" status label
+    const label = $('lfm-now-playing-label');
+    if (lastfmEnabled && currentSong) {
+      label.textContent = `◎ NOW PLAYING ON LAST.FM`;
+      label.style.color = 'var(--amber)';
+    } else if (!lastfmEnabled) {
+      label.textContent = 'scrobbling paused';
+      label.style.color = '';
+    } else {
+      label.textContent = 'waiting for track…';
+      label.style.color = '';
+    }
+  } else {
+    loginForm.classList.remove('hidden');
+    connectedView.classList.add('hidden');
+    badge.classList.add('hidden');
+  }
+}
+
+// ─── Login view wiring ────────────────────────────────────────────────────────
 function initLoginView() {
   $('login-btn').addEventListener('click', async () => {
     $('login-error').classList.add('hidden');
@@ -195,6 +247,7 @@ function initLoginView() {
   });
 }
 
+// ─── Main view wiring ─────────────────────────────────────────────────────────
 function initMainView() {
   $('rpc-toggle').addEventListener('change', (e) => {
     $('rpc-state-label').textContent = e.target.checked ? 'ON' : 'OFF';
@@ -209,10 +262,70 @@ function initMainView() {
   });
 }
 
+// ─── Last.fm wiring ───────────────────────────────────────────────────────────
+function initLastFm() {
+  // Connect button
+  $('lfm-connect-btn').addEventListener('click', async () => {
+    const username = $('lfm-username').value.trim();
+    const password = $('lfm-password').value;
+
+    if (!username || !password) {
+      showLfmError('Please enter your Last.fm username and password.');
+      return;
+    }
+
+    $('lfm-connect-btn').disabled = true;
+    $('lfm-connect-btn').textContent = 'CONNECTING…';
+    $('lfm-error').classList.add('hidden');
+
+    const result = await browser.runtime.sendMessage({
+      type: 'LASTFM_LOGIN',
+      username,
+      password,
+    }).catch(err => ({ ok: false, error: err.message }));
+
+    $('lfm-connect-btn').disabled = false;
+    $('lfm-connect-btn').textContent = 'CONNECT LAST.FM ›';
+
+    if (!result?.ok) {
+      showLfmError(result?.error || 'Login failed. Check your credentials.');
+      return;
+    }
+
+    // Clear sensitive fields immediately
+    $('lfm-password').value = '';
+    const s = await browser.runtime.sendMessage({ type: 'GET_STATE' });
+    renderLastFm(s);
+  });
+
+  // Allow Enter key to submit
+  [$('lfm-username'), $('lfm-password')].forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') $('lfm-connect-btn').click();
+    });
+  });
+
+  // Disconnect button
+  $('lfm-disconnect-btn').addEventListener('click', async () => {
+    if (!confirm('Disconnect Last.fm? Scrobbling will stop.')) return;
+    await browser.runtime.sendMessage({ type: 'LASTFM_LOGOUT' });
+    const s = await browser.runtime.sendMessage({ type: 'GET_STATE' });
+    renderLastFm(s);
+  });
+
+  // Scrobble toggle
+  $('scrobble-toggle').addEventListener('change', (e) => {
+    $('scrobble-state-label').textContent = e.target.checked ? 'ON' : 'OFF';
+    browser.runtime.sendMessage({ type: 'TOGGLE_SCROBBLE', enabled: e.target.checked });
+  });
+}
+
+// ─── Message listener (background → popup) ────────────────────────────────────
 browser.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'STATE_UPDATE') render(msg.state);
 });
 
+// ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {
   const savedTheme = localStorage.getItem('yt-music-rpc_theme');
   if (savedTheme === 'light') document.body.classList.add('theme-light');
@@ -225,6 +338,7 @@ async function init() {
 
   initLoginView();
   initMainView();
+  initLastFm();
 
   setLoading(true);
   try {
