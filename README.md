@@ -19,6 +19,12 @@
   <img src="https://img.shields.io/badge/Opera-Supported-red?style=flat-square&logo=opera&logoColor=white" />
 </p>
 
+## Screenshots
+
+| Extension view | Discord view |
+|---|---|
+| <img src="assets/1.png" alt="Extension view" width="420" /> | <img src="assets/2.png" alt="Discord view" width="420" /> |
+
 ---
 
 ## Features
