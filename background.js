@@ -46,11 +46,11 @@ let state = {
 //   • Scrobble fires when the user has listened to ≥ 50% of the track
 //     OR ≥ 4 minutes, whichever comes first
 //   • The same track+start-time is never scrobbled twice
-let scrobbleTimer    = null;
-let scrobbleTrackKey = null; // "title::artist::startTimestamp" — dedup guard
+let scrobbleTimer        = null;
+let scrobbleTrackKey     = null; // "title::artist::startTimestamp" — dedup guard
+let scrobblePendingKey   = null; // track key of the currently scheduled (not yet fired) timer
 
 function scheduleScrobble(song) {
-  clearScrobbleTimer();
   if (!state.lastfmSessionKey || !state.lastfmEnabled) return;
   if (!song || !song.title) return;
 
@@ -59,15 +59,25 @@ function scheduleScrobble(song) {
 
   const startTs  = song.startTimestamp ? Math.floor(song.startTimestamp / 1000) : Math.floor(Date.now() / 1000);
   const trackKey = `${song.title}::${song.artist || ''}::${startTs}`;
-  if (scrobbleTrackKey === trackKey) return; // already scrobbled this play
+
+  // Already scrobbled this play — skip
+  if (scrobbleTrackKey === trackKey) return;
+
+  // Timer already pending for this exact track — don't reset the countdown
+  if (scrobblePendingKey === trackKey && scrobbleTimer !== null) return;
+
+  // New track or different play — reset and reschedule
+  clearScrobbleTimer();
 
   // Delay = min(duration / 2, 240) seconds, converted to ms
   const delayMs = Math.min((duration / 2) * 1000, 240_000);
   console.log(`[lastfm] Will scrobble "${song.title}" in ${Math.round(delayMs / 1000)}s`);
 
+  scrobblePendingKey = trackKey;
   scrobbleTimer = setTimeout(async () => {
     if (scrobbleTrackKey === trackKey) return; // race-condition guard
-    scrobbleTrackKey = trackKey;
+    scrobbleTrackKey   = trackKey;
+    scrobblePendingKey = null;
 
     const result = await scrobble(state.lastfmSessionKey, song, startTs, state.lastfmApiKey, state.lastfmApiSecret);
     if (result?.ok) {
@@ -79,7 +89,8 @@ function scheduleScrobble(song) {
 
 function clearScrobbleTimer() {
   clearTimeout(scrobbleTimer);
-  scrobbleTimer = null;
+  scrobbleTimer      = null;
+  scrobblePendingKey = null;
 }
 
 // ─── Last.fm: updateNowPlaying ───────────────────────────────────────────────
@@ -373,7 +384,9 @@ async function resolveExternalAsset(url) {
 
 async function buildPresencePayload() {
   const activities = [];
-  if (state.rpcEnabled && state.currentSong) {
+  const hasSong    = state.rpcEnabled && !!state.currentSong;
+
+  if (hasSong) {
     const s        = state.currentSong;
     const activity = {
       name:           'YouTube Music',
@@ -406,6 +419,18 @@ async function buildPresencePayload() {
     }
     activities.push(activity);
   }
+
+  // When nothing is playing, send an empty presence so Discord controls
+  // its own status — don't force online/idle/dnd via our gateway connection.
+  if (!hasSong) {
+    return {
+      since:      null,
+      activities: [],
+      status:     'online', // neutral; Discord will use its own idle detection
+      afk:        false,
+    };
+  }
+
   return {
     since:      state.status === 'idle' ? Date.now() : null,
     activities,

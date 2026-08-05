@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "yt-music-rpc",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "YouTube Music → Discord Rich Presence + Last.fm Scrobbling. No desktop app required.",
   "author": "yt-music-rpc",
   "browser_specific_settings": {
