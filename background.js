@@ -247,14 +247,21 @@ function connect() {
 
 function scheduleReconnect() {
   if (!state.token) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
-    connect();
-  }, reconnectDelay);
+  // Use chrome.alarms in MV3 so the reconnect survives service-worker restarts.
+  // Falls back to setTimeout for Firefox / environments without chrome.alarms.
+  if (typeof chrome !== 'undefined' && chrome.alarms) {
+    chrome.alarms.create('discord-reconnect', { delayInMinutes: Math.max(reconnectDelay / 60_000, 0.1) });
+  } else {
+    reconnectTimer = setTimeout(() => {
+      reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
+      connect();
+    }, reconnectDelay);
+  }
 }
 
 function disconnect(permanent = false) {
   clearTimeout(reconnectTimer);
+  if (typeof chrome !== 'undefined' && chrome.alarms) chrome.alarms.clear('discord-reconnect');
   stopHeartbeat();
   if (permanent) { state.token = null; state.user = null; }
   if (ws) { const old = ws; ws = null; old.close(1000, 'User disconnected'); }
@@ -624,6 +631,16 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
   }
 });
+
+// ─── chrome.alarms listener (MV3 reconnect) ─────────────────────────────────
+if (typeof chrome !== 'undefined' && chrome.alarms) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'discord-reconnect') {
+      reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
+      connect();
+    }
+  });
+}
 
 loadState().then(() => {
   console.log('[yt-music-rpc] Background started.');
