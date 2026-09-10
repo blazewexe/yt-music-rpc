@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-1.3.0-blue?style=for-the-badge" alt="Version 1.3.0" />
+  <img src="https://img.shields.io/badge/Version-1.3.1-blue?style=for-the-badge" alt="Version 1.3.1" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License" />
   <img src="https://img.shields.io/badge/Platform-Cross--Browser-orange?style=for-the-badge" alt="Cross Browser" />
 </p>
