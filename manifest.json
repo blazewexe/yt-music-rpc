@@ -3,7 +3,7 @@
   "name": "yt-music-rpc",
   "version": "1.3.0",
   "description": "YouTube Music → Discord Rich Presence + Last.fm Scrobbling. No desktop app required.",
-  "author": "yt-music-rpc",
+  "author": "blazewexe",
   "browser_specific_settings": {
     "gecko": {
       "id": "yt-music-rpc@extension",

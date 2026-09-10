@@ -24,8 +24,10 @@ let state = {
   token:       null,
   user:        null,
   rpcEnabled:  true,
+  playingOnly: true,
   status:      'online',
   currentSong: null,
+  songTabId:   null,
   connected:   false,
   sessionId:   null,
   assetCache:  new Map(),
@@ -116,13 +118,14 @@ let isResuming       = false;
 
 async function loadState() {
   const stored = await browser.storage.local.get([
-    'token', 'user', 'rpcEnabled', 'status',
+    'token', 'user', 'rpcEnabled', 'playingOnly', 'status',
     'lastfmApiKey', 'lastfmApiSecret',
     'lastfmSessionKey', 'lastfmUsername', 'lastfmEnabled', 'lastfmScrobbles',
   ]);
   if (stored.token            != null) state.token            = stored.token;
   if (stored.user             != null) state.user             = stored.user;
   if (stored.rpcEnabled       != null) state.rpcEnabled       = stored.rpcEnabled;
+  if (stored.playingOnly     != null) state.playingOnly       = stored.playingOnly;
   if (stored.status           != null) state.status           = stored.status;
   if (stored.lastfmApiKey     != null) state.lastfmApiKey     = stored.lastfmApiKey;
   if (stored.lastfmApiSecret  != null) state.lastfmApiSecret  = stored.lastfmApiSecret;
@@ -137,6 +140,7 @@ function persist() {
     token:            state.token,
     user:             state.user,
     rpcEnabled:       state.rpcEnabled,
+    playingOnly:      state.playingOnly,
     status:           state.status,
     lastfmApiKey:     state.lastfmApiKey,
     lastfmApiSecret:  state.lastfmApiSecret,
@@ -215,7 +219,7 @@ function handleDiscordToken(token) {
 
 // ─── Discord Gateway ─────────────────────────────────────────────────────────
 function connect() {
-  if (!state.token) return;
+  if (!state.token || (state.playingOnly && !state.currentSong)) return;
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   clearTimeout(reconnectTimer);
   console.log('[yt-music-rpc] Connecting to Discord Gateway…');
@@ -246,7 +250,7 @@ function connect() {
 }
 
 function scheduleReconnect() {
-  if (!state.token) return;
+  if (!state.token || (state.playingOnly && !state.currentSong)) return;
   // Use chrome.alarms in MV3 so the reconnect survives service-worker restarts.
   // Falls back to setTimeout for Firefox / environments without chrome.alarms.
   if (typeof chrome !== 'undefined' && chrome.alarms) {
@@ -446,6 +450,19 @@ async function buildPresencePayload() {
   };
 }
 
+function stopSongPresence() {
+  state.currentSong      = null;
+  state.songTabId        = null;
+  state.lastfmNowPlaying = null;
+  clearScrobbleTimer();
+  pushPresence()
+    .catch(console.error)
+    .finally(() => {
+      if (state.playingOnly) disconnect();
+      broadcastState();
+    });
+}
+
 async function pushPresence() {
   if (!state.connected) return;
   const payload = await buildPresencePayload();
@@ -465,6 +482,7 @@ function getPublicState() {
     connected:   state.connected,
     user:        state.user,
     rpcEnabled:  state.rpcEnabled,
+    playingOnly:  state.playingOnly,
     status:      state.status,
     currentSong: state.currentSong,
     hasToken:    !!state.token,
@@ -504,6 +522,8 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // ── Discord ──────────────────────────────────────────────────────────────
     case 'SONG_UPDATE':
       state.currentSong = msg.song;
+      state.songTabId = sender.tab?.id ?? state.songTabId;
+      if (!ws && state.token) connect();
       pushPresence().catch(console.error);
       lfmUpdateNowPlaying(msg.song);
       scheduleScrobble(msg.song);
@@ -511,11 +531,9 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
 
     case 'SONG_STOP':
-      state.currentSong      = null;
-      state.lastfmNowPlaying = null;
-      clearScrobbleTimer();
-      pushPresence().catch(console.error);
-      broadcastState();
+      if (sender.tab?.id == null || sender.tab.id === state.songTabId) {
+        stopSongPresence();
+      }
       break;
 
     case 'DISCORD_TOKEN':
@@ -533,6 +551,7 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     case 'LOGOUT':
       state.currentSong = null;
+      state.songTabId = null;
       disconnect(true);
       persist();
       broadcastState();
@@ -542,6 +561,18 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'TOGGLE_RPC':
       state.rpcEnabled = msg.enabled;
       persist();
+      pushPresence().catch(console.error);
+      broadcastState();
+      break;
+
+    case 'TOGGLE_PLAYING_ONLY':
+      state.playingOnly = msg.enabled;
+      persist();
+      if (state.playingOnly && !state.currentSong) {
+        disconnect();
+      } else if (!state.playingOnly && state.token) {
+        connect();
+      }
       pushPresence().catch(console.error);
       broadcastState();
       break;
@@ -581,6 +612,7 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           console.error('[lastfm] Login failed:', err);
           sendResponse({ ok: false, error: err.message });
         });
+
       return true;
     }
 
@@ -632,6 +664,12 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+if (browser.tabs?.onRemoved) {
+  browser.tabs.onRemoved.addListener((tabId) => {
+    if (tabId === state.songTabId) stopSongPresence();
+  });
+}
+
 // ─── chrome.alarms listener (MV3 reconnect) ─────────────────────────────────
 if (typeof chrome !== 'undefined' && chrome.alarms) {
   chrome.alarms.onAlarm.addListener((alarm) => {
@@ -644,5 +682,5 @@ if (typeof chrome !== 'undefined' && chrome.alarms) {
 
 loadState().then(() => {
   console.log('[yt-music-rpc] Background started.');
-  if (state.token) connect();
+  if (state.token && (!state.playingOnly || state.currentSong)) connect();
 });

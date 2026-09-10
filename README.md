@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-1.2.2-blue?style=for-the-badge" alt="Version 1.2.2" />
+  <img src="https://img.shields.io/badge/Version-1.3.0-blue?style=for-the-badge" alt="Version 1.3.0" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License" />
   <img src="https://img.shields.io/badge/Platform-Cross--Browser-orange?style=for-the-badge" alt="Cross Browser" />
 </p>
@@ -21,9 +21,9 @@
 
 ## Screenshots
 
-| Extension view | Discord view |
-|---|---|
-| <img src="assets/1.png" alt="Extension view" width="420" /> | <img src="assets/2.png" alt="Discord view" width="420" /> |
+| Discord view |
+|---|
+| <img src="assets/2.png" alt="Discord view" width="420" /> |
 
 ---
 
@@ -54,6 +54,12 @@
 3. Click the **Load unpacked** button in the top-left.
 4. Select this project's root folder.
 5. Pin the extension to your toolbar.
+
+### Automated Firefox releases
+Push a version tag that matches `manifest.json` (for example, `v1.3.0`) to run the
+GitHub Actions release workflow. It lints the extension, builds an `.xpi` package,
+and attaches it to a GitHub Release. The workflow can also be started manually
+with the release tag as an input.
 
 ---
 

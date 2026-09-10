@@ -75,6 +75,8 @@ function sendStop() {
   browser.runtime.sendMessage({ type: 'SONG_STOP' }).catch(() => {});
 }
 
+window.addEventListener('pagehide', sendStop, { once: true });
+
 function check() {
   const vid     = getVideo();
   const playing = isActuallyPlaying(vid);

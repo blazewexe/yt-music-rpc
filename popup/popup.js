@@ -139,9 +139,11 @@ function renderUser({ user, status }) {
   $('avatar-status-dot').className = `avatar-status ${status}`;
 }
 
-function renderControls({ rpcEnabled }) {
+function renderControls({ rpcEnabled, playingOnly = true }) {
   $('rpc-toggle').checked          = rpcEnabled;
   $('rpc-state-label').textContent = rpcEnabled ? 'ON' : 'OFF';
+  $('playing-only-toggle').checked = playingOnly;
+  $('playing-only-state-label').textContent = playingOnly ? 'ON' : 'OFF';
 }
 
 function renderNowPlaying({ rpcEnabled, currentSong }) {
@@ -263,6 +265,11 @@ function initMainView() {
   $('rpc-toggle').addEventListener('change', (e) => {
     $('rpc-state-label').textContent = e.target.checked ? 'ON' : 'OFF';
     browser.runtime.sendMessage({ type: 'TOGGLE_RPC', enabled: e.target.checked });
+  });
+
+  $('playing-only-toggle').addEventListener('change', (e) => {
+    $('playing-only-state-label').textContent = e.target.checked ? 'ON' : 'OFF';
+    browser.runtime.sendMessage({ type: 'TOGGLE_PLAYING_ONLY', enabled: e.target.checked });
   });
 
   $('logout-btn').addEventListener('click', async () => {
@@ -423,4 +430,3 @@ async function init() {
 }
 
 init();
-
