@@ -42,8 +42,28 @@ jobs:
             exit 1
           fi
 
+      - name: Prepare Firefox source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf firefox-source
+          mkdir firefox-source
+          rsync -a \
+            --exclude ".git/" \
+            --exclude ".github/" \
+            --exclude "dist/" \
+            --exclude "firefox-source/" \
+            ./ firefox-source/
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'firefox-source/manifest.json';
+          const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
+          manifest.background = { scripts: ['background-sw.js'] };
+          fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+
       - name: Lint extension
-        run: npx --yes web-ext@8 lint --source-dir . --warnings-as-errors
+        run: npx --yes web-ext@8 lint --source-dir firefox-source --warnings-as-errors
 
       - name: Build XPI
         shell: bash
@@ -51,7 +71,7 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           npx --yes web-ext@8 build \
-            --source-dir . \
+            --source-dir firefox-source \
             --artifacts-dir dist \
             --overwrite-dest \
             --filename "yt-music-rpc-${RELEASE_TAG#v}.xpi"
