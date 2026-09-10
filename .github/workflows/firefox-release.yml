@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to build, for example v1.3.2"
+        description: "Release tag to build, for example v1.3.3"
         required: true
         type: string
 
@@ -58,7 +58,7 @@ jobs:
           const fs = require('fs');
           const path = 'firefox-source/manifest.json';
           const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
-          manifest.background = { scripts: ['background-sw.js'] };
+          manifest.background = { scripts: ['lastfm.js', 'background.js'] };
           fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
           NODE
 
