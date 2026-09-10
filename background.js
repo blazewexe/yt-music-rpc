@@ -496,19 +496,19 @@ function getPublicState() {
 }
 
 async function initiateLogin() {
-  startWebRequestCapture();
-  await browser.storage.local.set({ pendingLogin: true });
   try {
-    const tab = await browser.tabs.create({
-      url: 'https://discord.com/channels/@me',
-      active: false,
-    });
+    await browser.storage.local.set({ pendingLogin: true });
+    startWebRequestCapture();
+    const tab = await browser.tabs.create({ url: 'https://discord.com/channels/@me' });
+    if (typeof tab?.id !== 'number') throw new Error('Firefox did not return a Discord tab ID.');
     loginTabId = tab.id;
     return { ok: true };
   } catch (err) {
     stopWebRequestCapture();
     await browser.storage.local.remove('pendingLogin');
-    return { ok: false, error: err.message };
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[yt-music-rpc] Could not open Discord tab:', message);
+    return { ok: false, error: `Could not open Discord tab: ${message}` };
   }
 }
 

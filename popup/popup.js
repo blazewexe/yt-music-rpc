@@ -246,7 +246,10 @@ function initLoginView() {
     $('login-error').classList.add('hidden');
     $('login-btn').disabled = true;
 
-    const result = await browser.runtime.sendMessage({ type: 'LOGIN' }).catch(() => null);
+    const result = await browser.runtime.sendMessage({ type: 'LOGIN' }).catch(err => ({
+      ok: false,
+      error: `Extension background error: ${err.message || err}`,
+    }));
 
     if (!result || !result.ok) {
       $('login-btn').disabled = false;
