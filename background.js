@@ -499,14 +499,11 @@ async function initiateLogin() {
   startWebRequestCapture();
   await browser.storage.local.set({ pendingLogin: true });
   try {
-    const existing = await browser.tabs.query({ url: ['https://discord.com/*', 'https://discordapp.com/*'] });
-    if (existing.length > 0) {
-      loginTabId = existing[0].id;
-      await browser.tabs.reload(loginTabId);
-    } else {
-      const tab  = await browser.tabs.create({ url: 'https://discord.com/channels/@me', active: false });
-      loginTabId = tab.id;
-    }
+    const tab = await browser.tabs.create({
+      url: 'https://discord.com/channels/@me',
+      active: false,
+    });
+    loginTabId = tab.id;
     return { ok: true };
   } catch (err) {
     stopWebRequestCapture();
